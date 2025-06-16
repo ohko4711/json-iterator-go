@@ -269,11 +269,13 @@ func (iter *Iterator) readObjectFieldAsBytes() (ret []byte) {
 // ReadObjectCBWithoutCopy read object with callback, the key is ascii only,
 // and it will be changed in the next iterator call. The callback function must
 // make a copy of the key if needs to live beyond the scope of the callback.
-func (iter *Iterator) ReadObjectCBWithoutCopy(callback func(*Iterator,
-	[]byte) bool) bool {
+func (iter *Iterator) ReadObjectCBWithoutCopy(callback func(*Iterator, []byte) bool) bool {
 	c := iter.nextToken()
 	var field []byte
 	if c == '{' {
+		if !iter.incrementDepth() {
+			return false
+		}
 		c = iter.nextToken()
 		if c == '"' {
 			iter.unreadByte()
@@ -283,6 +285,7 @@ func (iter *Iterator) ReadObjectCBWithoutCopy(callback func(*Iterator,
 				iter.ReportError("ReadObject", "expect : after object field, but found "+string([]byte{c}))
 			}
 			if !callback(iter, field) {
+				iter.decrementDepth()
 				return false
 			}
 			c = iter.nextToken()
@@ -293,20 +296,23 @@ func (iter *Iterator) ReadObjectCBWithoutCopy(callback func(*Iterator,
 					iter.ReportError("ReadObject", "expect : after object field, but found "+string([]byte{c}))
 				}
 				if !callback(iter, field) {
+					iter.decrementDepth()
 					return false
 				}
 				c = iter.nextToken()
 			}
 			if c != '}' {
 				iter.ReportError("ReadObjectCB", `object not ended with }`)
+				iter.decrementDepth()
 				return false
 			}
-			return true
+			return iter.decrementDepth()
 		}
 		if c == '}' {
-			return true
+			return iter.decrementDepth()
 		}
-		iter.ReportError("ReadObjectCB", `expect " after }, but found `+string([]byte{c}))
+		iter.ReportError("ReadObjectCB", `expect " after {, but found `+string([]byte{c}))
+		iter.decrementDepth()
 		return false
 	}
 	if c == 'n' {
