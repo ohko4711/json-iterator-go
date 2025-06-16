@@ -265,3 +265,54 @@ func (iter *Iterator) readObjectFieldAsBytes() (ret []byte) {
 	}
 	return ret
 }
+
+// ReadObjectCBWithoutCopy read object with callback, the key is ascii only,
+// and it will be changed in the next iterator call. The callback function must
+// make a copy of the key if needs to live beyond the scope of the callback.
+func (iter *Iterator) ReadObjectCBWithoutCopy(callback func(*Iterator,
+	[]byte) bool) bool {
+	c := iter.nextToken()
+	var field []byte
+	if c == '{' {
+		c = iter.nextToken()
+		if c == '"' {
+			iter.unreadByte()
+			field = iter.ReadStringAsSlice()
+			c = iter.nextToken()
+			if c != ':' {
+				iter.ReportError("ReadObject", "expect : after object field, but found "+string([]byte{c}))
+			}
+			if !callback(iter, field) {
+				return false
+			}
+			c = iter.nextToken()
+			for c == ',' {
+				field = iter.ReadStringAsSlice()
+				c = iter.nextToken()
+				if c != ':' {
+					iter.ReportError("ReadObject", "expect : after object field, but found "+string([]byte{c}))
+				}
+				if !callback(iter, field) {
+					return false
+				}
+				c = iter.nextToken()
+			}
+			if c != '}' {
+				iter.ReportError("ReadObjectCB", `object not ended with }`)
+				return false
+			}
+			return true
+		}
+		if c == '}' {
+			return true
+		}
+		iter.ReportError("ReadObjectCB", `expect " after }, but found `+string([]byte{c}))
+		return false
+	}
+	if c == 'n' {
+		iter.skipThreeBytes('u', 'l', 'l')
+		return true // null
+	}
+	iter.ReportError("ReadObjectCB", `expect { or n, but found `+string([]byte{c}))
+	return false
+}
